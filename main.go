@@ -27,14 +27,13 @@ func main() {
 	// Buat Fiber app
 	app := config.NewApp(db)
 
-	// Register routes lama (praktikum 3 & 4)
+	// Register routes (praktikum 3 & 4)
 	route.AlumniRoute(app, db)
 	route.PekerjaanRoute(app, db)
 	route.AlumniStatusRoute(app)
 
 	// Register route auth (modul 5)
-	api := app.Group("/praktikum3")
-	route.AuthRoute(api)
+	route.AuthRoute(app, db)
 
 	// Jalankan server
 	port := os.Getenv("APP_PORT")

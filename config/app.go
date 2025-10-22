@@ -37,7 +37,7 @@ func NewApp(db *sql.DB) *fiber.App {
 	pekerjaanService := service.NewPekerjaanService(pekerjaanRepo)
 
 	api = app.Group("/api")
-	route.AuthRoute(api)
+	route.AuthRoute(api, db)
 
 	alumni := api.Group("/alumni", middleware.AuthRequired())
 	alumni.Get("/", alumniService.GetAll)
@@ -47,36 +47,42 @@ func NewApp(db *sql.DB) *fiber.App {
 	alumni.Delete("/:id", middleware.AdminOnly(), alumniService.SoftDelete)
 
 	pekerjaan := api.Group("/pekerjaan", middleware.AuthRequired())
-	pekerjaan.Get("/", pekerjaanService.GetAll)
+	// pekerjaan.Get("/", pekerjaanService.GetAll)
 	pekerjaan.Get("/:id", pekerjaanService.GetByID)
 	pekerjaan.Get("/alumni/:alumni_id", middleware.AdminOnly(), pekerjaanService.GetByAlumniID)
 	pekerjaan.Post("/", middleware.AdminOnly(), pekerjaanService.Create)
 	pekerjaan.Put("/:id", middleware.AdminOnly(), pekerjaanService.Update)
 	pekerjaan.Delete("/:id", middleware.AdminOnly(), pekerjaanService.SoftDelete)
 
-	user := api.Group("/user", middleware.AuthRequired())
-	user.Delete("/:id", func(c *fiber.Ctx) error {
-		role := c.Locals("role").(string)
-		id, err := c.ParamsInt("id")
-		if err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"success": false,
-				"error":   "invalid user id",
-			})
-		}
+	user := app.Group("/user")
+	user.Delete("/pekerjaan/:id", pekerjaanService.SoftDelete)
 
-		if err := service.SoftDeleteUser(db, uint(id), role); err != nil {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"success": false,
-				"error":   err.Error(),
-			})
-		}
+	// user.Delete("/:id", service.DeleteUserHandler(db))
 
-		return c.JSON(fiber.Map{
-			"success": true,
-			"message": "User berhasil dihapus (soft delete)",
-		})
-	})
+
+	// user := api.Group("/user", middleware.AuthRequired())
+	// user.Delete("/:id", func(c *fiber.Ctx) error {
+	// 	role := c.Locals("role").(string)
+	// 	id, err := c.ParamsInt("id")
+	// 	if err != nil {
+	// 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+	// 			"success": false,
+	// 			"error":   "invalid user id",
+	// 		})
+	// 	}
+
+	// 	if err := service.SoftDeleteUser(db, uint(id), role); err != nil {
+	// 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+	// 			"success": false,
+	// 			"error":   err.Error(),
+	// 		})
+	// 	}
+
+	// 	return c.JSON(fiber.Map{
+	// 		"success": true,
+	// 		"message": "User berhasil dihapus (soft delete)",
+	// 	})
+	// })
 
 	return app
 }

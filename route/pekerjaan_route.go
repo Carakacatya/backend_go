@@ -15,13 +15,13 @@ func PekerjaanRoute(r fiber.Router, db *sql.DB) {
 
 	g := r.Group("/pekerjaan", middleware.AuthRequired())
 
-	g.Get("/", p.GetAll)
+	// g.Get("/", p.GetAll)
+	g.Get("/trash", middleware.AdminOnly(), p.GetTrashed)
 	g.Get("/:id", p.GetByID)
 	g.Get("/alumni/:alumni_id", p.GetByAlumniID)
 	g.Post("/", middleware.AdminOnly(), p.Create)
 	g.Put("/:id", middleware.AdminOnly(), p.Update)
 	g.Delete("/:id", middleware.AdminOnly(), p.SoftDelete)
-	g.Get("/trash", p.GetTrashed)
 	g.Put("/restore/:id", p.Restore)
 	g.Delete("/hard/:id", middleware.AdminOnly(), p.HardDelete)
 }

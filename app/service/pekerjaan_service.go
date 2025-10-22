@@ -17,6 +17,49 @@ func NewPekerjaanService(repo *repository.PekerjaanRepository) *PekerjaanService
 	return &PekerjaanService{repo: repo}
 }
 
+func (s *PekerjaanService) GetTrashed(c *fiber.Ctx) error {
+	userData := c.Locals("user")
+	claimsMap, ok := userData.(map[string]interface{})
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"success": false,
+			"message": "Invalid token data",
+		})
+	}
+
+	role, _ := claimsMap["role"].(string)
+	var userID int
+	if v, ok := claimsMap["id"].(float64); ok {
+		userID = int(v)
+	} else if v, ok := claimsMap["id"].(int); ok {
+		userID = v
+	}
+
+	var (
+		data []model.PekerjaanTrash
+		err  error
+	)
+
+	if role == "admin" {
+		data, err = s.repo.GetAllTrash()
+	} else {
+		data, err = s.repo.GetUserTrash(userID)
+	}
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"message": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    data,
+	})
+}
+
+
 func (s *PekerjaanService) GetAll(c *fiber.Ctx) error {
 	search := c.Query("search", "")
 	sortBy := c.Query("sortBy", "created_at")
@@ -65,16 +108,19 @@ func (s *PekerjaanService) Create(c *fiber.Ctx) error {
 	if err := c.BodyParser(&in); err != nil {
 		return c.Status(400).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
+
 	start, _ := time.Parse("2006-01-02", in.TanggalMulaiKerja)
 	var end *time.Time
 	if in.TanggalSelesaiKerja != "" {
 		t, _ := time.Parse("2006-01-02", in.TanggalSelesaiKerja)
 		end = &t
 	}
+
 	id, err := s.repo.Create(in, &start, end)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
+
 	return c.JSON(fiber.Map{"success": true, "message": "Pekerjaan berhasil dibuat", "id": id})
 }
 
@@ -84,61 +130,67 @@ func (s *PekerjaanService) Update(c *fiber.Ctx) error {
 	if err := c.BodyParser(&in); err != nil {
 		return c.Status(400).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
+
 	start, _ := time.Parse("2006-01-02", in.TanggalMulaiKerja)
 	var end *time.Time
 	if in.TanggalSelesaiKerja != "" {
 		t, _ := time.Parse("2006-01-02", in.TanggalSelesaiKerja)
 		end = &t
 	}
+
 	err := s.repo.Update(id, in, &start, end)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
+
 	return c.JSON(fiber.Map{"success": true, "message": "Pekerjaan berhasil diupdate"})
 }
 
+// func (s *PekerjaanService) SoftDelete(c *fiber.Ctx) error {
+// 	userData := c.Locals("user")
+// 	claimsMap, ok := userData.(map[string]interface{})
+// 	if !ok {
+// 		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid token data"})
+// 	}
+
+// 	role, _ := claimsMap["role"].(string)
+// 	var userID int
+// 	if v, ok := claimsMap["id"].(float64); ok {
+// 		userID = int(v)
+// 	} else if v, ok := claimsMap["id"].(int); ok {
+// 		userID = v
+// 	} else {
+// 		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid user ID type in token"})
+// 	}
+
+// 	id, _ := strconv.Atoi(c.Params("id"))
+// 	var err error
+
+// 	if role == "admin" {
+// 		err = s.repo.SoftDeleteByAdmin(id, 0)
+// 	} else {
+// 		err = s.repo.HardDeleteByUser()(id, userID)
+// 	}
+
+// 	if err != nil {
+// 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
+// 	}
+
+// 	return c.JSON(fiber.Map{"success": true, "message": "Pekerjaan dihapus (soft delete)"})
+// }
+
 func (s *PekerjaanService) SoftDelete(c *fiber.Ctx) error {
+	// Ambil data user dari token (middleware)
 	userData := c.Locals("user")
 	claimsMap, ok := userData.(map[string]interface{})
 	if !ok {
-		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid token data"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"success": false,
+			"message": "Invalid token data",
+		})
 	}
 
-	role, _ := claimsMap["role"].(string)
-
-	var userID int
-	if v, ok := claimsMap["id"].(float64); ok {
-		userID = int(v)
-	} else if v, ok := claimsMap["id"].(int); ok {
-		userID = v
-	} else {
-		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid user ID type in token"})
-	}
-
-	id, _ := strconv.Atoi(c.Params("id"))
-
-	if role == "admin" {
-		err := s.repo.SoftDeleteByID(id)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
-		}
-	} else {
-		err := s.repo.SoftDeleteByIDAndUser(id, userID)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
-		}
-	}
-
-	return c.JSON(fiber.Map{"success": true, "message": "Pekerjaan dihapus (soft delete)"})
-}
-
-func (s *PekerjaanService) GetTrashed(c *fiber.Ctx) error {
-	userData := c.Locals("user")
-	claimsMap, ok := userData.(map[string]interface{})
-	if !ok {
-		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid token data"})
-	}
-
+	// Ambil role & userID dari token
 	role, _ := claimsMap["role"].(string)
 	var userID int
 	if v, ok := claimsMap["id"].(float64); ok {
@@ -146,22 +198,195 @@ func (s *PekerjaanService) GetTrashed(c *fiber.Ctx) error {
 	} else if v, ok := claimsMap["id"].(int); ok {
 		userID = v
 	} else {
-		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid user ID type in token"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"success": false,
+			"message": "Invalid user ID type in token",
+		})
 	}
 
-	var data []model.PekerjaanAlumni
-	var err error
-
-	if role == "admin" {
-		data, err = s.repo.GetAllTrash()
-	} else {
-		data, err = s.repo.GetUserTrash(userID)
-	}
+	// Ambil ID pekerjaan dari parameter
+	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"message": "ID pekerjaan tidak valid",
+		})
 	}
-	return c.JSON(fiber.Map{"success": true, "data": data})
+
+	// Tentukan repository yang digunakan berdasarkan role
+	if role == "admin" {
+		err = s.repo.SoftDeleteByAdmin(id)
+	} else {
+		err = s.repo.SoftDeleteByUser(id, userID)
+	}
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"message": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "Pekerjaan dihapus (soft delete)",
+	})
 }
+
+// func (s *PekerjaanService) GetTrashed(c *fiber.Ctx) error {
+// 	userData := c.Locals("user")
+// 	claimsMap, ok := userData.(map[string]interface{})
+// 	if !ok {
+// 		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid token data"})
+// 	}
+
+// 	role, _ := claimsMap["role"].(string)
+// 	var userID int
+// 	if v, ok := claimsMap["id"].(float64); ok {
+// 		userID = int(v)
+// 	} else if v, ok := claimsMap["id"].(int); ok {
+// 		userID = v
+// 	} else {
+// 		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid user ID type in token"})
+// 	}
+
+// 	if role == "admin" {
+// 		data, err := s.repo.GetAllTrash()
+// 		if err != nil {
+// 			return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
+// 		}
+// 		return c.JSON(fiber.Map{"success": true, "data": data})
+// 	}
+
+// 	data, err := s.repo.GetUserTrash(userID)
+// 	if err != nil {
+// 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
+// 	}
+// 	return c.JSON(fiber.Map{"success": true, "data": data})
+// }
+
+// func (s *PekerjaanService) GetTrashed(c *fiber.Ctx) error {
+// 	// Ambil data user dari token
+// 	userData := c.Locals("user")
+// 	claimsMap, ok := userData.(map[string]interface{})
+// 	if !ok {
+// 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+// 			"success": false,
+// 			"message": "Invalid token data",
+// 		})
+// 	}
+
+// 	// Ambil role & user ID
+// 	role, _ := claimsMap["role"].(string)
+
+// 	var userID int
+// 	switch v := claimsMap["id"].(type) {
+// 	case float64:
+// 		userID = int(v)
+// 	case int:
+// 		userID = v
+// 	default:
+// 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+// 			"success": false,
+// 			"message": "Invalid user ID type in token",
+// 		})
+// 	}
+
+// 	// Ambil data trash berdasarkan role
+// 	var (
+// 		data []model.Pekerjaan
+// 		err  error
+// 	)
+
+// 	// if role == "admin" {
+// 	// 	data, err = s.repo.GetAllTrash()
+// 	// } else {
+// 	// 	data, err = s.repo.GetUserTrash(userID)
+// 	// }
+// 		if role == "admin" {
+// 		data, err = s.repo.GetAllTrash()
+// 	} else {
+// 		// Jika user biasa → ambil trash miliknya saja
+// 		data, err = s.repo.GetUserTrash(userID)
+// 	}
+
+// 	if err != nil {
+// 		// Jika repository kamu sudah tidak return error saat kosong,
+// 		// bagian ini hanya akan kena saat ada error SQL sungguhan
+// 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+// 			"success": false,
+// 			"message": err.Error(),
+// 		})
+// 	}
+
+// 	// Jika data kosong, tetap return sukses tapi dengan pesan tambahan
+// 	if len(data) == 0 {
+// 		return c.JSON(fiber.Map{
+// 			"success": true,
+// 			"message": "Tidak ada data di trash",
+// 			"data":    []model.Pekerjaan{},
+// 		})
+// 	}
+
+// 	return c.JSON(fiber.Map{
+// 		"success": true,
+// 		"data":    data,
+// 	})
+// }
+
+// func (s *PekerjaanService) GetTrashed(c *fiber.Ctx) error {
+// 	// Ambil data user dari token JWT
+// 	userData := c.Locals("user")
+// 	claimsMap, ok := userData.(map[string]interface{})
+// 	if !ok {
+// 		return c.Status(401).JSON(fiber.Map{
+// 			"success": false,
+// 			"message": "Invalid token data",
+// 		})
+// 	}
+
+// 	// Ambil role dan userID dari claims
+// 	role, _ := claimsMap["role"].(string)
+// 	var userID int
+// 	if v, ok := claimsMap["id"].(float64); ok {
+// 		userID = int(v)
+// 	} else if v, ok := claimsMap["id"].(int); ok {
+// 		userID = v
+// 	} else {
+// 		return c.Status(401).JSON(fiber.Map{
+// 			"success": false,
+// 			"message": "Invalid user ID type in token",
+// 		})
+// 	}
+
+// 	var (
+// 		data interface{}
+// 		err  error
+// 	)
+
+// 	// Jika admin → ambil semua trash
+// 	if role == "admin" {
+// 		data, err = s.repo.GetAllTrash()
+// 	} else {
+// 		// Jika user biasa → ambil trash miliknya saja
+// 		data, err = s.repo.GetUserTrash(userID)
+// 	}
+
+// 	if err != nil {
+// 		return c.Status(500).JSON(fiber.Map{
+// 			"success": false,
+// 			"message": err.Error(),
+// 		})
+// 	}
+
+// 	// Jika kosong, tetap return sukses dengan array kosong
+// 	return c.JSON(fiber.Map{
+// 		"success": true,
+// 		"data":    data,
+// 	})
+// }
+
+
 
 func (s *PekerjaanService) Restore(c *fiber.Ctx) error {
 	userData := c.Locals("user")

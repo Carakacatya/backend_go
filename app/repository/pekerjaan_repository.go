@@ -16,6 +16,40 @@ func NewPekerjaanRepository(db *sql.DB) *PekerjaanRepository {
 	return &PekerjaanRepository{DB: db}
 }
 
+func (r *PekerjaanRepository) GetAllTrash() ([]model.PekerjaanTrash, error) {
+	rows, err := r.DB.Query(`
+		SELECT id, nama_perusahaan, posisi_jabatan, deleted_at, updated_at
+		FROM pekerjaan_alumni
+		WHERE deleted_at IS NOT NULL;
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []model.PekerjaanTrash
+	for rows.Next() {
+		var p model.PekerjaanTrash
+		if err := rows.Scan(
+			&p.ID,
+			&p.NamaPerusahaan,
+			&p.PosisiJabatan,
+			&p.DeletedAt,
+			&p.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, p)
+	}
+
+	// Kalau tidak ada hasil, kembalikan slice kosong, bukan error
+	if len(result) == 0 {
+		return []model.PekerjaanTrash{}, nil
+	}
+
+	return result, nil
+}
+
 func (r *PekerjaanRepository) GetAllWithQuery(search, sortBy, order string, limit, offset int) ([]model.PekerjaanAlumni, error) {
 	allowedSort := map[string]string{
 		"id": "p.id", "alumni_id": "p.alumni_id", "nama_perusahaan": "p.nama_perusahaan",
@@ -163,40 +197,13 @@ func (r *PekerjaanRepository) Update(id int, in model.UpdatePekerjaanReq, mulai,
 	return err
 }
 
-func (r *PekerjaanRepository) SoftDeleteByID(id int) error {
-	_, err := r.DB.Exec(`
-		UPDATE pekerjaan_alumni 
-		SET deleted_at = NOW(), updated_at = NOW() 
-		WHERE id = $1
-	`, id)
-	return err
-}
-
-// func (r *PekerjaanRepository) SoftDeleteByIDAndUser(id int, userID int) error {
-// 	_, err := r.DB.Exec(`
-// 		UPDATE pekerjaan_alumni 
-// 		SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-// 		WHERE id = $1 
-// 		AND alumni_id IN (SELECT id FROM alumni WHERE user_id = $2)
-// 	`, id, userID)
-// 	return err
-// }
-
-// func (r *PekerjaanRepository) SoftDeleteByIDAndUser(id int, userID int) error {
-// 	_, err := r.DB.Exec(`
-// 		UPDATE pekerjaan_alumni 
-// 		SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-// 		WHERE id = $1 
-// 		AND alumni_id IN (SELECT id FROM alumni WHERE user_id = $2)
-// 	`, id, userID)
-// 	return err
-// }
-
-func (r *PekerjaanRepository) SoftDeleteByIDAndUser(id int, userID int) error {
+// SoftDeleteByUser hanya bisa digunakan oleh user biasa.
+// Ia hanya boleh menghapus data pekerjaan miliknya sendiri.
+func (r *PekerjaanRepository) SoftDeleteByUser(id int, userID int) error {
 	query := `
 		UPDATE pekerjaan_alumni 
 		SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1 
+		WHERE id = $1
 		AND alumni_id IN (SELECT id FROM alumni WHERE user_id = $2)
 		AND deleted_at IS NULL
 		RETURNING deleted_at
@@ -211,35 +218,30 @@ func (r *PekerjaanRepository) SoftDeleteByIDAndUser(id int, userID int) error {
 		return err
 	}
 
-	fmt.Printf("Data soft delete berhasil pada waktu: %v\n", deletedAt)
 	return nil
 }
 
+// SoftDeleteByAdmin digunakan oleh admin untuk menghapus data siapa pun.
+func (r *PekerjaanRepository) SoftDeleteByAdmin(id int) error {
+	query := `
+		UPDATE pekerjaan_alumni 
+		SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+		AND deleted_at IS NULL
+		RETURNING deleted_at
+	`
 
+	var deletedAt time.Time
+	err := r.DB.QueryRow(query, id).Scan(&deletedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("gagal soft delete: data tidak ditemukan")
+		}
+		return err
+	}
 
-// func (r *PekerjaanRepository) SoftDeleteByIDAndUser(id int, userID int) error {
-// 	query := `
-// 		UPDATE pekerjaan_alumni 
-// 		SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-// 		WHERE id = $1 
-// 		AND alumni_id IN (SELECT id FROM alumni WHERE user_id = $2)
-// 	`
-// 	res, err := r.DB.Exec(query, id, userID)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	rowsAffected, err := res.RowsAffected()
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	if rowsAffected == 0 {
-// 		return fmt.Errorf("gagal menghapus data: tidak ada baris yang cocok atau user tidak memiliki akses")
-// 	}
-
-// 	return nil
-// }
+	return nil
+}
 
 func (r *PekerjaanRepository) RestoreByID(id int) error {
 	_, err := r.DB.Exec(`
@@ -272,70 +274,34 @@ func (r *PekerjaanRepository) HardDeleteByUser(id, userID int) error {
 	return err
 }
 
-func (r *PekerjaanRepository) GetAllTrash() ([]model.PekerjaanAlumni, error) {
+func (r *PekerjaanRepository) GetUserTrash(userID int) ([]model.PekerjaanTrash, error) {
 	rows, err := r.DB.Query(`
-		SELECT p.id, p.alumni_id, a.nama, p.nama_perusahaan, p.posisi_jabatan,
-		       p.bidang_industri, p.lokasi_kerja, p.gaji_range,
-		       p.tanggal_mulai_kerja, p.tanggal_selesai_kerja,
-		       p.status_pekerjaan, p.deskripsi_pekerjaan, 
-		       p.created_at, p.updated_at, p.deleted_at
+		SELECT p.id, p.nama_perusahaan, p.posisi_jabatan, p.deskripsi, p.alumni_id, p.deleted_at, p.updated_at
 		FROM pekerjaan_alumni p
-		LEFT JOIN alumni a ON p.alumni_id = a.id
-		WHERE p.deleted_at IS NOT NULL
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var list []model.PekerjaanAlumni
-	for rows.Next() {
-		var p model.PekerjaanAlumni
-		err := rows.Scan(
-			&p.ID, &p.AlumniID, &p.AlumniNama, &p.NamaPerusahaan,
-			&p.PosisiJabatan, &p.BidangIndustri, &p.LokasiKerja,
-			&p.GajiRange, &p.TanggalMulaiKerja, &p.TanggalSelesaiKerja,
-			&p.StatusPekerjaan, &p.DeskripsiPekerjaan,
-			&p.CreatedAt, &p.UpdatedAt, &p.DeletedAt,
-		)
-		if err != nil {
-			return nil, err
-		}
-		list = append(list, p)
-	}
-	return list, nil
-}
-
-func (r *PekerjaanRepository) GetUserTrash(userID int) ([]model.PekerjaanAlumni, error) {
-	rows, err := r.DB.Query(`
-		SELECT p.id, p.alumni_id, a.nama, p.nama_perusahaan, p.posisi_jabatan,
-		       p.bidang_industri, p.lokasi_kerja, p.gaji_range,
-		       p.tanggal_mulai_kerja, p.tanggal_selesai_kerja,
-		       p.status_pekerjaan, p.deskripsi_pekerjaan, 
-		       p.created_at, p.updated_at, p.deleted_at
-		FROM pekerjaan_alumni p
-		LEFT JOIN alumni a ON p.alumni_id = a.id
-		WHERE p.deleted_at IS NOT NULL AND a.user_id = $1
+		JOIN alumni a ON p.alumni_id = a.id
+		WHERE a.user_id = $1 AND p.deleted_at IS NOT NULL
 	`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var list []model.PekerjaanAlumni
+	var result []model.PekerjaanTrash
 	for rows.Next() {
-		var p model.PekerjaanAlumni
-		err := rows.Scan(
-			&p.ID, &p.AlumniID, &p.AlumniNama, &p.NamaPerusahaan,
-			&p.PosisiJabatan, &p.BidangIndustri, &p.LokasiKerja,
-			&p.GajiRange, &p.TanggalMulaiKerja, &p.TanggalSelesaiKerja,
-			&p.StatusPekerjaan, &p.DeskripsiPekerjaan,
-			&p.CreatedAt, &p.UpdatedAt, &p.DeletedAt,
-		)
-		if err != nil {
+		var p model.PekerjaanTrash
+		if err := rows.Scan(
+			&p.ID,
+			&p.NamaPerusahaan,
+			&p.PosisiJabatan,
+			&p.DeletedAt,
+			&p.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
-		list = append(list, p)
+		result = append(result, p)
 	}
-	return list, nil
+
+	// Jika tidak ada data, bisa return slice kosong tanpa error
+	return result, nil
 }
+
