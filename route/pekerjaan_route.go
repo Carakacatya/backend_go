@@ -21,7 +21,7 @@ func PekerjaanRoute(r fiber.Router, db *sql.DB) {
 	g.Get("/alumni/:alumni_id", p.GetByAlumniID)
 	g.Post("/", middleware.AdminOnly(), p.Create)
 	g.Put("/:id", middleware.AdminOnly(), p.Update)
-	g.Delete("/:id", middleware.AdminOnly(), p.SoftDelete)
+	g.Delete("/:id", p.SoftDelete)
 	g.Put("/restore/:id", p.Restore)
 	g.Delete("/hard/:id", middleware.AdminOnly(), p.HardDelete)
 }

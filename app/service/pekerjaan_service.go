@@ -233,158 +233,38 @@ func (s *PekerjaanService) SoftDelete(c *fiber.Ctx) error {
 	})
 }
 
-// func (s *PekerjaanService) GetTrashed(c *fiber.Ctx) error {
-// 	userData := c.Locals("user")
-// 	claimsMap, ok := userData.(map[string]interface{})
-// 	if !ok {
-// 		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid token data"})
-// 	}
-
-// 	role, _ := claimsMap["role"].(string)
-// 	var userID int
-// 	if v, ok := claimsMap["id"].(float64); ok {
-// 		userID = int(v)
-// 	} else if v, ok := claimsMap["id"].(int); ok {
-// 		userID = v
-// 	} else {
-// 		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid user ID type in token"})
-// 	}
-
-// 	if role == "admin" {
-// 		data, err := s.repo.GetAllTrash()
-// 		if err != nil {
-// 			return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
-// 		}
-// 		return c.JSON(fiber.Map{"success": true, "data": data})
-// 	}
-
-// 	data, err := s.repo.GetUserTrash(userID)
+// func (s *PekerjaanService) HandleSoftDeleteByUser(c *fiber.Ctx) error {
+// 	// Ambil ID dari parameter URL
+// 	idStr := c.Params("id")
+// 	id, err := strconv.Atoi(idStr)
 // 	if err != nil {
-// 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
+// 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+// 			"error": "ID tidak valid",
+// 		})
 // 	}
-// 	return c.JSON(fiber.Map{"success": true, "data": data})
-// }
 
-// func (s *PekerjaanService) GetTrashed(c *fiber.Ctx) error {
-// 	// Ambil data user dari token
-// 	userData := c.Locals("user")
-// 	claimsMap, ok := userData.(map[string]interface{})
+// 	// Ambil userID dari context (misalnya dari middleware JWT)
+// 	userIDValue := c.Locals("userID")
+// 	userID, ok := userIDValue.(int)
 // 	if !ok {
 // 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-// 			"success": false,
-// 			"message": "Invalid token data",
+// 			"error": "userID tidak ditemukan dalam context",
 // 		})
 // 	}
 
-// 	// Ambil role & user ID
-// 	role, _ := claimsMap["role"].(string)
-
-// 	var userID int
-// 	switch v := claimsMap["id"].(type) {
-// 	case float64:
-// 		userID = int(v)
-// 	case int:
-// 		userID = v
-// 	default:
-// 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-// 			"success": false,
-// 			"message": "Invalid user ID type in token",
+// 	// Jalankan soft delete melalui repository
+// 	if err := s.repo.SoftDeleteByUser(id, userID); err != nil {
+// 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+// 			"error": err.Error(),
 // 		})
 // 	}
 
-// 	// Ambil data trash berdasarkan role
-// 	var (
-// 		data []model.Pekerjaan
-// 		err  error
-// 	)
-
-// 	// if role == "admin" {
-// 	// 	data, err = s.repo.GetAllTrash()
-// 	// } else {
-// 	// 	data, err = s.repo.GetUserTrash(userID)
-// 	// }
-// 		if role == "admin" {
-// 		data, err = s.repo.GetAllTrash()
-// 	} else {
-// 		// Jika user biasa → ambil trash miliknya saja
-// 		data, err = s.repo.GetUserTrash(userID)
-// 	}
-
-// 	if err != nil {
-// 		// Jika repository kamu sudah tidak return error saat kosong,
-// 		// bagian ini hanya akan kena saat ada error SQL sungguhan
-// 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-// 			"success": false,
-// 			"message": err.Error(),
-// 		})
-// 	}
-
-// 	// Jika data kosong, tetap return sukses tapi dengan pesan tambahan
-// 	if len(data) == 0 {
-// 		return c.JSON(fiber.Map{
-// 			"success": true,
-// 			"message": "Tidak ada data di trash",
-// 			"data":    []model.Pekerjaan{},
-// 		})
-// 	}
-
+// 	// Respon sukses
 // 	return c.JSON(fiber.Map{
-// 		"success": true,
-// 		"data":    data,
+// 		"message": "Data berhasil dihapus (soft delete oleh user)",
 // 	})
 // }
 
-// func (s *PekerjaanService) GetTrashed(c *fiber.Ctx) error {
-// 	// Ambil data user dari token JWT
-// 	userData := c.Locals("user")
-// 	claimsMap, ok := userData.(map[string]interface{})
-// 	if !ok {
-// 		return c.Status(401).JSON(fiber.Map{
-// 			"success": false,
-// 			"message": "Invalid token data",
-// 		})
-// 	}
-
-// 	// Ambil role dan userID dari claims
-// 	role, _ := claimsMap["role"].(string)
-// 	var userID int
-// 	if v, ok := claimsMap["id"].(float64); ok {
-// 		userID = int(v)
-// 	} else if v, ok := claimsMap["id"].(int); ok {
-// 		userID = v
-// 	} else {
-// 		return c.Status(401).JSON(fiber.Map{
-// 			"success": false,
-// 			"message": "Invalid user ID type in token",
-// 		})
-// 	}
-
-// 	var (
-// 		data interface{}
-// 		err  error
-// 	)
-
-// 	// Jika admin → ambil semua trash
-// 	if role == "admin" {
-// 		data, err = s.repo.GetAllTrash()
-// 	} else {
-// 		// Jika user biasa → ambil trash miliknya saja
-// 		data, err = s.repo.GetUserTrash(userID)
-// 	}
-
-// 	if err != nil {
-// 		return c.Status(500).JSON(fiber.Map{
-// 			"success": false,
-// 			"message": err.Error(),
-// 		})
-// 	}
-
-// 	// Jika kosong, tetap return sukses dengan array kosong
-// 	return c.JSON(fiber.Map{
-// 		"success": true,
-// 		"data":    data,
-// 	})
-// }
 
 
 

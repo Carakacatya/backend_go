@@ -38,15 +38,6 @@ type PekerjaanAlumni struct {
 }
 
 type PekerjaanTrash struct {
-	// ID              int        `json:"id"`
-	// AlumniID        int        `json:"alumni_id"`
-	// AlumniNama      string     `json:"alumni_nama"`
-	// NamaPerusahaan  string     `json:"nama_perusahaan"`
-	// PosisiJabatan   string     `json:"posisi_jabatan"`
-	// BidangIndustri  string     `json:"bidang_industri"`
-	// LokasiKerja     string     `json:"lokasi_kerja"`
-	// StatusPekerjaan string     `json:"status_pekerjaan"`
-	// DeletedAt       *time.Time `json:"deleted_at"`
 	ID             int        `json:"id"`
 	NamaPerusahaan string     `json:"nama_perusahaan"`
 	PosisiJabatan  string     `json:"posisi_jabatan"`

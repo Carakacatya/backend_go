@@ -53,6 +53,7 @@ func NewApp(db *sql.DB) *fiber.App {
 	pekerjaan.Post("/", middleware.AdminOnly(), pekerjaanService.Create)
 	pekerjaan.Put("/:id", middleware.AdminOnly(), pekerjaanService.Update)
 	pekerjaan.Delete("/:id", middleware.AdminOnly(), pekerjaanService.SoftDelete)
+	// pekerjaan.Put("/user/pekerjaan/:id", pekerjaanService.HandleSoftDeleteByUser)
 
 	user := app.Group("/user")
 	user.Delete("/pekerjaan/:id", pekerjaanService.SoftDelete)
