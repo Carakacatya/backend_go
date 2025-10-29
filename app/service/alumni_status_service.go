@@ -6,20 +6,31 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func GetAlumniByStatusService(c *fiber.Ctx) error {
-    status := c.Query("status", "aktif") // default aktif
+type AlumniStatusService struct {
+	statusRepo repository.AlumniStatusRepository
+}
 
-    data, count, err := repository.GetAlumniByStatus(status)
-    if err != nil {
-        return c.Status(500).JSON(fiber.Map{
-            "error": "Gagal mengambil data",
-        })
-    }
+// Constructor
+func NewAlumniStatusService(repo repository.AlumniStatusRepository) *AlumniStatusService {
+	return &AlumniStatusService{statusRepo: repo}
+}
 
-    return c.JSON(fiber.Map{
-        "success": true,
-        "status": status,
-        "jumlah_bekerja_lebih_dari_satu_tahun": count,
-        "data": data,
-    })
+// ✅ Handler untuk mendapatkan laporan berdasarkan status pekerjaan
+func (s *AlumniStatusService) GetAlumniByStatus(c *fiber.Ctx) error {
+	status := c.Query("status", "aktif") // default: aktif
+
+	data, count, err := s.statusRepo.GetAlumniByStatus(status)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"success": false,
+			"message": "Gagal mengambil data: " + err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success":  true,
+		"status":   status,
+		"jumlah_bekerja_lebih_dari_satu_tahun": count,
+		"data":     data,
+	})
 }

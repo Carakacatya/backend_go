@@ -1,21 +1,11 @@
 package model
 
 type MetaInfo struct {
-	Page   int    `json:"page"`
-	Limit  int    `json:"limit"`
-	Total  int    `json:"total"`
-	Pages  int    `json:"pages"`
-	SortBy string `json:"sortBy"`
-	Order  string `json:"order"`
-	Search string `json:"search"`
-}
-
-type AlumniResponse struct {
-	Data []Alumni `json:"data"`
-	Meta MetaInfo `json:"meta"`
-}
-
-type PekerjaanResponse struct {
-	Data []PekerjaanAlumni `json:"data"`
-	Meta MetaInfo          `json:"meta"`
+	Page   int    `bson:"page" json:"page"`
+	Limit  int    `bson:"limit" json:"limit"`
+	Total  int    `bson:"total" json:"total"`
+	Pages  int    `bson:"pages" json:"pages"`
+	SortBy string `bson:"sort_by" json:"sortBy"`
+	Order  string `bson:"order" json:"order"`
+	Search string `bson:"search" json:"search"`
 }

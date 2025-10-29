@@ -5,8 +5,8 @@ import (
 	"os"
 )
 
-// InitLogger membuat logger baru yang bisa digunakan di seluruh aplikasi
+// InitLogger membuat instance logger global untuk aplikasi.
+// Logger ini menulis ke stdout dengan format tanggal, waktu, dan nama file baris kode.
 func InitLogger() *log.Logger {
-	// Output logger diarahkan ke stdout (console)
-	return log.New(os.Stdout, "[PRAKTIKUM3] ", log.Ldate|log.Ltime|log.Lshortfile)
+	return log.New(os.Stdout, "📘 [PRAKTIKUM3] ", log.Ldate|log.Ltime|log.Lshortfile)
 }

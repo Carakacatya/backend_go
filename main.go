@@ -12,35 +12,35 @@ import (
 )
 
 func main() {
+	// === Load environment variables ===
 	if err := godotenv.Load(); err != nil {
-		log.Println("⚠️ No .env file found, using system environment")
+		log.Println("⚠️  .env file not found, using system environment variables")
 	}
 
-	dsn := os.Getenv("DB_DSN")
-	if dsn == "" {
-		log.Fatal("❌ DB_DSN tidak ditemukan di .env")
+	// === Connect to MongoDB ===
+	mongoDB := database.ConnectMongo()
+	if mongoDB == nil {
+		log.Fatal("❌ Failed to connect to MongoDB")
 	}
 
-	// Koneksi ke database
-	db := database.ConnectDB(dsn)
+	// === Initialize Fiber App ===
+	app := config.NewApp(mongoDB)
 
-	// Buat Fiber app
-	app := config.NewApp(db)
+	// === Register Routes ===
+	route.AuthRoute(app, mongoDB)
+	route.AlumniRoute(app, mongoDB)
+	route.PekerjaanRoute(app, mongoDB)
+	route.AlumniStatusRoute(app, mongoDB) // ✅ pastikan route ini juga menerima db jika dibutuhkan
 
-	// Register routes (praktikum 3 & 4)
-	route.AlumniRoute(app, db)
-	route.PekerjaanRoute(app, db)
-	route.AlumniStatusRoute(app)
-
-	// Register route auth (modul 5)
-	route.AuthRoute(app, db)
-
-	// Jalankan server
-	port := os.Getenv("APP_PORT")
+	// === Get port from environment ===
+	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3000"
 	}
 
+	// === Start the server ===
 	log.Printf("🚀 Server running at http://127.0.0.1:%s", port)
-	log.Fatal(app.Listen(":" + port))
+	if err := app.Listen(":" + port); err != nil {
+		log.Fatalf("❌ Failed to start server: %v", err)
+	}
 }

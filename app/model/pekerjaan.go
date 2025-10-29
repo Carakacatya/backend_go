@@ -1,62 +1,41 @@
 package model
 
-import "time"
+import (
+	"time"
 
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
+
+// ================= MAIN STRUCT =================
 type Pekerjaan struct {
-	ID                  int        `json:"id"`
-	AlumniID            int        `json:"alumni_id"`
-	NamaPerusahaan      string     `json:"nama_perusahaan"`
-	PosisiJabatan       string     `json:"posisi_jabatan"`
-	BidangIndustri      string     `json:"bidang_industri"`
-	LokasiKerja         string     `json:"lokasi_kerja"`
-	GajiRange           *string    `json:"gaji_range,omitempty"`
-	TanggalMulaiKerja   time.Time  `json:"tanggal_mulai_kerja"`
-	TanggalSelesaiKerja *time.Time `json:"tanggal_selesai_kerja,omitempty"`
-	StatusPekerjaan     string     `json:"status_pekerjaan"`
-	DeskripsiPekerjaan  *string    `json:"deskripsi_pekerjaan,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
-	DeletedAt           *time.Time `json:"deleted_at,omitempty"`
+	ID                  primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	AlumniID            primitive.ObjectID `bson:"alumni_id" json:"alumni_id"`
+	NamaPerusahaan      string             `bson:"nama_perusahaan" json:"nama_perusahaan"`
+	PosisiJabatan       string             `bson:"posisi_jabatan" json:"posisi_jabatan"`
+	BidangIndustri      string             `bson:"bidang_industri" json:"bidang_industri"`
+	LokasiKerja         string             `bson:"lokasi_kerja" json:"lokasi_kerja"`
+	GajiRange           *string            `bson:"gaji_range,omitempty" json:"gaji_range,omitempty"`
+	TanggalMulaiKerja   *time.Time         `bson:"tanggal_mulai_kerja,omitempty" json:"tanggal_mulai_kerja,omitempty"`
+	TanggalSelesaiKerja *time.Time         `bson:"tanggal_selesai_kerja,omitempty" json:"tanggal_selesai_kerja,omitempty"`
+	StatusPekerjaan     string             `bson:"status_pekerjaan" json:"status_pekerjaan"`
+	DeskripsiPekerjaan  *string            `bson:"deskripsi_pekerjaan,omitempty" json:"deskripsi_pekerjaan,omitempty"`
+	CreatedAt           time.Time          `bson:"created_at" json:"created_at"`
+	UpdatedAt           time.Time          `bson:"updated_at" json:"updated_at"`
+	DeletedAt           *time.Time         `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
 }
 
-type PekerjaanAlumni struct {
-	ID                  int        `json:"id"`
-	AlumniID            int        `json:"alumni_id"`
-	AlumniNama          string     `json:"alumni_nama"`
-	NamaPerusahaan      string     `json:"nama_perusahaan"`
-	PosisiJabatan       string     `json:"posisi_jabatan"`
-	BidangIndustri      string     `json:"bidang_industri"`
-	LokasiKerja         string     `json:"lokasi_kerja"`
-	GajiRange           *string    `json:"gaji_range,omitempty"`
-	TanggalMulaiKerja   time.Time  `json:"tanggal_mulai_kerja"`
-	TanggalSelesaiKerja *time.Time `json:"tanggal_selesai_kerja,omitempty"`
-	StatusPekerjaan     string     `json:"status_pekerjaan"`
-	DeskripsiPekerjaan  *string    `json:"deskripsi_pekerjaan,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
-	DeletedAt           *time.Time `json:"deleted_at,omitempty"`
-}
-
+// ================= TRASH STRUCT =================
 type PekerjaanTrash struct {
-	ID             int        `json:"id"`
-	NamaPerusahaan string     `json:"nama_perusahaan"`
-	PosisiJabatan  string     `json:"posisi_jabatan"`
-	DeletedAt      *time.Time `json:"deleted_at"`
-	UpdatedAt      *time.Time `json:"updated_at"`
-
+	ID                  primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	AlumniID            primitive.ObjectID `bson:"alumni_id" json:"alumni_id"`
+	NamaPerusahaan      string             `bson:"nama_perusahaan" json:"nama_perusahaan"`
+	PosisiJabatan       string             `bson:"posisi_jabatan" json:"posisi_jabatan"`
+	BidangIndustri      string             `bson:"bidang_industri" json:"bidang_industri"`
+	LokasiKerja         string             `bson:"lokasi_kerja" json:"lokasi_kerja"`
+	GajiRange           *string            `bson:"gaji_range,omitempty" json:"gaji_range,omitempty"`
+	TanggalMulaiKerja   *time.Time         `bson:"tanggal_mulai_kerja,omitempty" json:"tanggal_mulai_kerja,omitempty"`
+	TanggalSelesaiKerja *time.Time         `bson:"tanggal_selesai_kerja,omitempty" json:"tanggal_selesai_kerja,omitempty"`
+	StatusPekerjaan     string             `bson:"status_pekerjaan" json:"status_pekerjaan"`
+	DeskripsiPekerjaan  *string            `bson:"deskripsi_pekerjaan,omitempty" json:"deskripsi_pekerjaan,omitempty"`
+	DeletedAt           *time.Time         `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
 }
-
-type CreatePekerjaanReq struct {
-	AlumniID            int    `json:"alumni_id"`
-	NamaPerusahaan      string `json:"nama_perusahaan"`
-	PosisiJabatan       string `json:"posisi_jabatan"`
-	BidangIndustri      string `json:"bidang_industri"`
-	LokasiKerja         string `json:"lokasi_kerja"`
-	GajiRange           string `json:"gaji_range"`
-	TanggalMulaiKerja   string `json:"tanggal_mulai_kerja"`
-	TanggalSelesaiKerja string `json:"tanggal_selesai_kerja"`
-	StatusPekerjaan     string `json:"status_pekerjaan"`
-	DeskripsiPekerjaan  string `json:"deskripsi_pekerjaan"`
-}
-
-type UpdatePekerjaanReq = CreatePekerjaanReq

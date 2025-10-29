@@ -7,59 +7,18 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type PekerjaanService struct {
-	repo *repository.PekerjaanRepository
+	repo repository.PekerjaanRepository
 }
 
-func NewPekerjaanService(repo *repository.PekerjaanRepository) *PekerjaanService {
+func NewPekerjaanService(repo repository.PekerjaanRepository) *PekerjaanService {
 	return &PekerjaanService{repo: repo}
 }
 
-func (s *PekerjaanService) GetTrashed(c *fiber.Ctx) error {
-	userData := c.Locals("user")
-	claimsMap, ok := userData.(map[string]interface{})
-	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"success": false,
-			"message": "Invalid token data",
-		})
-	}
-
-	role, _ := claimsMap["role"].(string)
-	var userID int
-	if v, ok := claimsMap["id"].(float64); ok {
-		userID = int(v)
-	} else if v, ok := claimsMap["id"].(int); ok {
-		userID = v
-	}
-
-	var (
-		data []model.PekerjaanTrash
-		err  error
-	)
-
-	if role == "admin" {
-		data, err = s.repo.GetAllTrash()
-	} else {
-		data, err = s.repo.GetUserTrash(userID)
-	}
-
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"success": false,
-			"message": err.Error(),
-		})
-	}
-
-	return c.JSON(fiber.Map{
-		"success": true,
-		"data":    data,
-	})
-}
-
-
+// ================== GET ALL ==================
 func (s *PekerjaanService) GetAll(c *fiber.Ctx) error {
 	search := c.Query("search", "")
 	sortBy := c.Query("sortBy", "created_at")
@@ -73,46 +32,87 @@ func (s *PekerjaanService) GetAll(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
 
-	total, _ := s.repo.Count(search)
+	count, err := s.repo.Count(search)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
+	}
+
 	return c.JSON(fiber.Map{
 		"success": true,
 		"data":    data,
 		"meta": fiber.Map{
-			"total": total,
+			"total": count,
 			"page":  page,
 			"limit": limit,
 		},
 	})
 }
 
+// ================== GET BY ID ==================
 func (s *PekerjaanService) GetByID(c *fiber.Ctx) error {
-	id, _ := strconv.Atoi(c.Params("id"))
-	data, err := s.repo.GetByID(id)
+	idStr := c.Params("id")
+	objectID, err := primitive.ObjectIDFromHex(idStr)
 	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"success": false, "message": "Data tidak ditemukan"})
+		return c.Status(400).JSON(fiber.Map{"success": false, "message": "ID tidak valid"})
 	}
-	return c.JSON(fiber.Map{"success": true, "data": data})
-}
 
-func (s *PekerjaanService) GetByAlumniID(c *fiber.Ctx) error {
-	alumniID, _ := strconv.Atoi(c.Params("alumni_id"))
-	data, err := s.repo.GetByAlumniID(alumniID)
+	data, err := s.repo.GetByID(objectID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
+	if data == nil {
+		return c.Status(404).JSON(fiber.Map{"success": false, "message": "Data tidak ditemukan"})
+	}
+
 	return c.JSON(fiber.Map{"success": true, "data": data})
 }
 
+// ================== GET BY ALUMNI ID ==================
+func (s *PekerjaanService) GetByAlumniID(c *fiber.Ctx) error {
+	alumniIDParam := c.Params("alumni_id")
+	alumniID, err := primitive.ObjectIDFromHex(alumniIDParam)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"success": false, "message": "alumni_id tidak valid"})
+	}
+
+	// Ambil data user dari middleware
+	userData := c.Locals("user")
+	user, ok := userData.(*model.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid token data"})
+	}
+	role := user.Role
+	includeDeleted := false
+	if role == "admin" {
+		includeDeleted = true
+	}
+
+	data, err := s.repo.GetByAlumniID(alumniID, includeDeleted)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"success": true, "data": data})
+}
+
+// ================== CREATE ==================
 func (s *PekerjaanService) Create(c *fiber.Ctx) error {
 	var in model.CreatePekerjaanReq
 	if err := c.BodyParser(&in); err != nil {
 		return c.Status(400).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
 
-	start, _ := time.Parse("2006-01-02", in.TanggalMulaiKerja)
+	start, err := time.Parse("2006-01-02", in.TanggalMulaiKerja)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"success": false, "message": "Tanggal mulai tidak valid"})
+	}
+
 	var end *time.Time
 	if in.TanggalSelesaiKerja != "" {
-		t, _ := time.Parse("2006-01-02", in.TanggalSelesaiKerja)
+		t, err := time.Parse("2006-01-02", in.TanggalSelesaiKerja)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"success": false, "message": "Tanggal selesai tidak valid"})
+		}
 		end = &t
 	}
 
@@ -121,154 +121,45 @@ func (s *PekerjaanService) Create(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
 
-	return c.JSON(fiber.Map{"success": true, "message": "Pekerjaan berhasil dibuat", "id": id})
+	return c.JSON(fiber.Map{"success": true, "message": "Pekerjaan berhasil dibuat", "id": id.Hex()})
 }
 
+// ================== UPDATE ==================
 func (s *PekerjaanService) Update(c *fiber.Ctx) error {
-	id, _ := strconv.Atoi(c.Params("id"))
+	idStr := c.Params("id")
+	objectID, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"success": false, "message": "ID pekerjaan tidak valid"})
+	}
+
 	var in model.UpdatePekerjaanReq
 	if err := c.BodyParser(&in); err != nil {
 		return c.Status(400).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
 
-	start, _ := time.Parse("2006-01-02", in.TanggalMulaiKerja)
+	start, err := time.Parse("2006-01-02", in.TanggalMulaiKerja)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"success": false, "message": "Tanggal mulai tidak valid"})
+	}
+
 	var end *time.Time
 	if in.TanggalSelesaiKerja != "" {
-		t, _ := time.Parse("2006-01-02", in.TanggalSelesaiKerja)
+		t, err := time.Parse("2006-01-02", in.TanggalSelesaiKerja)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"success": false, "message": "Tanggal selesai tidak valid"})
+		}
 		end = &t
 	}
 
-	err := s.repo.Update(id, in, &start, end)
-	if err != nil {
+	if err := s.repo.Update(objectID, in, &start, end); err != nil {
 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
 
 	return c.JSON(fiber.Map{"success": true, "message": "Pekerjaan berhasil diupdate"})
 }
 
-// func (s *PekerjaanService) SoftDelete(c *fiber.Ctx) error {
-// 	userData := c.Locals("user")
-// 	claimsMap, ok := userData.(map[string]interface{})
-// 	if !ok {
-// 		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid token data"})
-// 	}
-
-// 	role, _ := claimsMap["role"].(string)
-// 	var userID int
-// 	if v, ok := claimsMap["id"].(float64); ok {
-// 		userID = int(v)
-// 	} else if v, ok := claimsMap["id"].(int); ok {
-// 		userID = v
-// 	} else {
-// 		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid user ID type in token"})
-// 	}
-
-// 	id, _ := strconv.Atoi(c.Params("id"))
-// 	var err error
-
-// 	if role == "admin" {
-// 		err = s.repo.SoftDeleteByAdmin(id, 0)
-// 	} else {
-// 		err = s.repo.HardDeleteByUser()(id, userID)
-// 	}
-
-// 	if err != nil {
-// 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
-// 	}
-
-// 	return c.JSON(fiber.Map{"success": true, "message": "Pekerjaan dihapus (soft delete)"})
-// }
-
+// ================== SOFT DELETE ==================
 func (s *PekerjaanService) SoftDelete(c *fiber.Ctx) error {
-	// Ambil data user dari token (middleware)
-	userData := c.Locals("user")
-	claimsMap, ok := userData.(map[string]interface{})
-	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"success": false,
-			"message": "Invalid token data",
-		})
-	}
-
-	// Ambil role & userID dari token
-	role, _ := claimsMap["role"].(string)
-	var userID int
-	if v, ok := claimsMap["id"].(float64); ok {
-		userID = int(v)
-	} else if v, ok := claimsMap["id"].(int); ok {
-		userID = v
-	} else {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"success": false,
-			"message": "Invalid user ID type in token",
-		})
-	}
-
-	// Ambil ID pekerjaan dari parameter
-	id, err := strconv.Atoi(c.Params("id"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success": false,
-			"message": "ID pekerjaan tidak valid",
-		})
-	}
-
-	// Tentukan repository yang digunakan berdasarkan role
-	if role == "admin" {
-		err = s.repo.SoftDeleteByAdmin(id)
-	} else {
-		err = s.repo.SoftDeleteByUser(id, userID)
-	}
-
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"success": false,
-			"message": err.Error(),
-		})
-	}
-
-	return c.JSON(fiber.Map{
-		"success": true,
-		"message": "Pekerjaan dihapus (soft delete)",
-	})
-}
-
-// func (s *PekerjaanService) HandleSoftDeleteByUser(c *fiber.Ctx) error {
-// 	// Ambil ID dari parameter URL
-// 	idStr := c.Params("id")
-// 	id, err := strconv.Atoi(idStr)
-// 	if err != nil {
-// 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-// 			"error": "ID tidak valid",
-// 		})
-// 	}
-
-// 	// Ambil userID dari context (misalnya dari middleware JWT)
-// 	userIDValue := c.Locals("userID")
-// 	userID, ok := userIDValue.(int)
-// 	if !ok {
-// 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-// 			"error": "userID tidak ditemukan dalam context",
-// 		})
-// 	}
-
-// 	// Jalankan soft delete melalui repository
-// 	if err := s.repo.SoftDeleteByUser(id, userID); err != nil {
-// 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-// 			"error": err.Error(),
-// 		})
-// 	}
-
-// 	// Respon sukses
-// 	return c.JSON(fiber.Map{
-// 		"message": "Data berhasil dihapus (soft delete oleh user)",
-// 	})
-// }
-
-
-
-
-func (s *PekerjaanService) Restore(c *fiber.Ctx) error {
 	userData := c.Locals("user")
 	claimsMap, ok := userData.(map[string]interface{})
 	if !ok {
@@ -276,60 +167,67 @@ func (s *PekerjaanService) Restore(c *fiber.Ctx) error {
 	}
 
 	role, _ := claimsMap["role"].(string)
-	var userID int
-	if v, ok := claimsMap["id"].(float64); ok {
-		userID = int(v)
-	} else if v, ok := claimsMap["id"].(int); ok {
-		userID = v
-	} else {
-		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid user ID type in token"})
+	userIDStr, _ := claimsMap["id"].(string)
+	userID, err := primitive.ObjectIDFromHex(userIDStr)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"success": false, "message": "User ID tidak valid"})
 	}
 
-	id, _ := strconv.Atoi(c.Params("id"))
-	var err error
+	idStr := c.Params("id")
+	objectID, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"success": false, "message": "ID pekerjaan tidak valid"})
+	}
 
 	if role == "admin" {
-		err = s.repo.RestoreByID(id)
+		err = s.repo.SoftDeleteByAdmin(objectID)
 	} else {
-		err = s.repo.RestoreByIDAndUser(id, userID)
+		err = s.repo.SoftDeleteByUser(objectID, userID)
 	}
 
 	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"success": true, "message": "Pekerjaan dihapus (soft delete)"})
+}
+
+// ================== RESTORE ==================
+func (s *PekerjaanService) Restore(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	objectID, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"success": false, "message": "ID tidak valid"})
+	}
+
+	if err := s.repo.RestoreByID(objectID); err != nil {
 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
 
 	return c.JSON(fiber.Map{"success": true, "message": "Data berhasil direstore"})
 }
 
+// ================== HARD DELETE ==================
 func (s *PekerjaanService) HardDelete(c *fiber.Ctx) error {
-	userData := c.Locals("user")
-	claimsMap, ok := userData.(map[string]interface{})
-	if !ok {
-		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid token data"})
-	}
-
-	role, _ := claimsMap["role"].(string)
-	var userID int
-	if v, ok := claimsMap["id"].(float64); ok {
-		userID = int(v)
-	} else if v, ok := claimsMap["id"].(int); ok {
-		userID = v
-	} else {
-		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid user ID type in token"})
-	}
-
-	id, _ := strconv.Atoi(c.Params("id"))
-	var err error
-
-	if role == "admin" {
-		err = s.repo.HardDeleteByID(id)
-	} else {
-		err = s.repo.HardDeleteByUser(id, userID)
-	}
-
+	idStr := c.Params("id")
+	objectID, err := primitive.ObjectIDFromHex(idStr)
 	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"success": false, "message": "ID tidak valid"})
+	}
+
+	if err := s.repo.HardDeleteByID(objectID); err != nil {
 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
 
 	return c.JSON(fiber.Map{"success": true, "message": "Data dihapus permanen"})
+}
+
+// ================== GET TRASH ==================
+func (s *PekerjaanService) GetTrashed(c *fiber.Ctx) error {
+	data, err := s.repo.GetAllTrash()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"success": true, "data": data})
 }

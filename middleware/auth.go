@@ -2,11 +2,12 @@ package middleware
 
 import (
 	"praktikum3/app/utils"
-	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+// AuthRequired middleware untuk endpoint yang wajib login
 func AuthRequired() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
@@ -17,15 +18,19 @@ func AuthRequired() fiber.Handler {
 			})
 		}
 
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+		// Ambil token tanpa kata "Bearer "
+		token := ""
+		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+			token = authHeader[7:]
+		} else {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"success": false,
 				"message": "Format token salah, gunakan 'Bearer <token>'",
 			})
 		}
 
-		claims, err := utils.ValidateToken(parts[1])
+		// Validasi token JWT
+		claims, err := utils.ValidateToken(token)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"success": false,
@@ -33,13 +38,22 @@ func AuthRequired() fiber.Handler {
 			})
 		}
 
-		userMap := map[string]any{
-			"id":       claims.UserID,
+		// Konversi string UserID dari JWT ke ObjectID (jika valid)
+		userID := claims.UserID
+		if _, err := primitive.ObjectIDFromHex(userID); err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"success": false,
+				"message": "ID user tidak valid",
+			})
+		}
+
+		// Simpan user ke context sebagai map[string]interface{}
+		c.Locals("user", map[string]interface{}{
+			"id":       userID,
 			"username": claims.Username,
 			"role":     claims.Role,
-		}
-		c.Locals("user", userMap)
-		c.Locals("user_id", claims.UserID)
+		})
+		c.Locals("user_id", userID)
 		c.Locals("username", claims.Username)
 		c.Locals("role", claims.Role)
 
@@ -47,6 +61,7 @@ func AuthRequired() fiber.Handler {
 	}
 }
 
+// AdminOnly middleware untuk admin saja
 func AdminOnly() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		role, ok := c.Locals("role").(string)
@@ -60,6 +75,7 @@ func AdminOnly() fiber.Handler {
 	}
 }
 
+// UserOnly middleware untuk user biasa saja
 func UserOnly() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		role, ok := c.Locals("role").(string)

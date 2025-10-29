@@ -1,57 +1,108 @@
 package repository
 
 import (
+	"context"
+	"log"
+	"time"
+
 	"praktikum3/app/model"
-	"praktikum3/database"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func GetAlumniByStatus(status string) ([]model.AlumniPekerjaanReport, int, error) {
-    rows, err := database.DB.Query(`
-        SELECT a.id, a.nama, a.jurusan, a.angkatan,
-               p.bidang_industri, p.nama_perusahaan, p.posisi_jabatan,
-               p.tanggal_mulai_kerja, p.gaji_range,
-               CASE 
-                   WHEN p.tanggal_mulai_kerja <= NOW() - INTERVAL '1 year' 
-                   THEN true ELSE false
-               END AS lebih_dari_satu_tahun
-        FROM alumni a
-        JOIN pekerjaan_alumni p ON a.id = p.alumni_id
-        WHERE 
-            ($1 = 'aktif' AND p.status_pekerjaan = 'aktif')
-            OR ($1 = 'tidak-aktif' AND p.status_pekerjaan IN ('selesai','resigned'))
-    `, status)
-    if err != nil {
-        return nil, 0, err
-    }
-    defer rows.Close()
+type AlumniStatusRepository interface {
+	GetAlumniByStatus(status string) ([]model.AlumniPekerjaanReport, int, error)
+}
 
-    var reports []model.AlumniPekerjaanReport
-    for rows.Next() {
-        var r model.AlumniPekerjaanReport
-        if err := rows.Scan(
-            &r.ID, &r.Nama, &r.Jurusan, &r.Angkatan,
-            &r.BidangIndustri, &r.NamaPerusahaan, &r.PosisiJabatan,
-            &r.TanggalMulaiKerja, &r.GajiRange, &r.LebihDariSatuTahun,
-        ); err != nil {
-            return nil, 0, err
-        }
-        reports = append(reports, r)
-    }
+type alumniStatusRepository struct {
+	alumniCol    *mongo.Collection
+	pekerjaanCol *mongo.Collection
+}
 
-    var count int
-    err = database.DB.QueryRow(`
-        SELECT COUNT(*)
-        FROM pekerjaan_alumni
-        WHERE 
-            (
-              ($1 = 'aktif' AND status_pekerjaan = 'aktif')
-              OR ($1 = 'tidak-aktif' AND status_pekerjaan IN ('selesai','resigned'))
-            )
-          AND tanggal_mulai_kerja <= NOW() - INTERVAL '1 year'
-    `, status).Scan(&count)
-    if err != nil {
-        return nil, 0, err
-    }
+func NewAlumniStatusRepository(db *mongo.Database) AlumniStatusRepository {
+	return &alumniStatusRepository{
+		alumniCol:    db.Collection("alumni"),
+		pekerjaanCol: db.Collection("pekerjaan_alumni"),
+	}
+}
 
-    return reports, count, nil
+func (r *alumniStatusRepository) GetAlumniByStatus(status string) ([]model.AlumniPekerjaanReport, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Filter pekerjaan berdasarkan status
+	var pekerjaanFilter bson.M
+	if status == "aktif" {
+		pekerjaanFilter = bson.M{"status_pekerjaan": "aktif"}
+	} else if status == "tidak-aktif" {
+		pekerjaanFilter = bson.M{
+			"status_pekerjaan": bson.M{"$in": []string{"selesai", "resigned"}},
+		}
+	} else {
+		pekerjaanFilter = bson.M{} // semua
+	}
+
+	cursor, err := r.pekerjaanCol.Find(ctx, pekerjaanFilter)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer cursor.Close(ctx)
+
+	var reports []model.AlumniPekerjaanReport
+	count := 0
+	now := time.Now()
+
+	for cursor.Next(ctx) {
+		var p struct {
+			AlumniID          interface{} `bson:"alumni_id"`
+			NamaPerusahaan    string      `bson:"nama_perusahaan"`
+			PosisiJabatan     string      `bson:"posisi_jabatan"`
+			BidangIndustri    string      `bson:"bidang_industri"`
+			TanggalMulaiKerja time.Time   `bson:"tanggal_mulai_kerja"`
+			GajiRange         string      `bson:"gaji_range"`
+		}
+		if err := cursor.Decode(&p); err != nil {
+			log.Println("decode error:", err)
+			continue
+		}
+
+		// cari data alumni terkait
+		var a struct {
+			ID        interface{} `bson:"_id"`
+			Nama      string      `bson:"nama"`
+			Jurusan   string      `bson:"jurusan"`
+			Angkatan  int         `bson:"angkatan"`
+		}
+
+		err := r.alumniCol.FindOne(ctx, bson.M{"_id": p.AlumniID}).Decode(&a)
+		if err != nil {
+			log.Printf("alumni %v tidak ditemukan: %v", p.AlumniID, err)
+			continue
+		}
+
+		// logika lama: lebih dari 1 tahun bekerja
+		lebihSetahun := p.TanggalMulaiKerja.Before(now.AddDate(-1, 0, 0))
+		if lebihSetahun {
+			count++
+		}
+
+		reports = append(reports, model.AlumniPekerjaanReport{
+			Nama:               a.Nama,
+			Jurusan:            a.Jurusan,
+			Angkatan:           a.Angkatan,
+			BidangIndustri:     p.BidangIndustri,
+			NamaPerusahaan:     p.NamaPerusahaan,
+			PosisiJabatan:      p.PosisiJabatan,
+			TanggalMulaiKerja:  p.TanggalMulaiKerja,
+			GajiRange:          p.GajiRange,
+			LebihDariSatuTahun: lebihSetahun,
+		})
+	}
+
+	if err := cursor.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return reports, count, nil
 }

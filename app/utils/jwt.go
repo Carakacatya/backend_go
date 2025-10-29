@@ -1,23 +1,30 @@
 package utils
 
 import (
+	"os"
 	"praktikum3/app/model"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// Pakai secret yang sama persis di middleware
-var jwtSecret = []byte("rahasia-super") // jangan beda dengan middleware
+// Ambil secret key dari environment (.env)
+var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
-// GenerateToken membuat JWT token untuk user
+// GenerateToken membuat JWT token untuk user MongoDB
 func GenerateToken(user model.User) (string, error) {
-	claims := &model.JWTClaims{ // pointer lebih aman
-		UserID:   user.ID,
+	userID := ""
+	if !user.ID.IsZero() {
+		userID = user.ID.Hex()
+	}
+
+	claims := &model.JWTClaims{
+		UserID:   userID,
 		Username: user.Username,
 		Role:     user.Role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)), // expired 1 hari
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)), // Expired dalam 1 hari
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
@@ -26,7 +33,7 @@ func GenerateToken(user model.User) (string, error) {
 	return token.SignedString(jwtSecret)
 }
 
-// ValidateToken memverifikasi JWT
+// ValidateToken memverifikasi JWT dan mengembalikan klaim
 func ValidateToken(tokenString string) (*model.JWTClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &model.JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return jwtSecret, nil
@@ -35,9 +42,12 @@ func ValidateToken(tokenString string) (*model.JWTClaims, error) {
 		return nil, err
 	}
 
-	// langsung return claims
 	if claims, ok := token.Claims.(*model.JWTClaims); ok && token.Valid {
-		return claims, nil
+		// Validasi tambahan: pastikan UserID valid
+		if claims.UserID == "" || primitive.IsValidObjectID(claims.UserID) {
+			return claims, nil
+		}
 	}
+
 	return nil, jwt.ErrTokenMalformed
 }

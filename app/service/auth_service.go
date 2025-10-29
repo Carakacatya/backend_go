@@ -1,25 +1,29 @@
 package service
 
 import (
-	"database/sql"
+	"context"
+	"fmt"
 	"praktikum3/app/model"
 	"praktikum3/app/repository"
 	"praktikum3/app/utils"
 
 	"github.com/gofiber/fiber/v2"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type AuthService struct {
-	UserRepo *repository.UserRepository
+	userRepo repository.IUserRepository
 }
 
-// Constructor
-func NewAuthService(db *sql.DB) *AuthService {
+// ✅ Constructor
+func NewAuthService(db *mongo.Database) *AuthService {
+	repo := repository.NewUserRepository(db)
 	return &AuthService{
-		UserRepo: repository.NewUserRepository(db),
+		userRepo: repo,
 	}
 }
 
+// ✅ Login Handler
 func (s *AuthService) Login(c *fiber.Ctx) error {
 	var req model.LoginRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -29,35 +33,42 @@ func (s *AuthService) Login(c *fiber.Ctx) error {
 		})
 	}
 
-	user, err := s.UserRepo.FindByUsernameOrEmail(req.Username)
+	// 🔍 Cari user berdasarkan username/email dari MongoDB
+	user, err := s.userRepo.FindByUsernameOrEmail(context.Background(), req.Username)
+	fmt.Println("DEBUG user =", user)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"success": false,
-				"message": "Username atau password salah",
-			})
-		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"success": false,
-			"message": "Kesalahan database",
+			"message": "Kesalahan database: " + err.Error(),
 		})
 	}
 
-	if !utils.CheckPassword(req.Password, user.PasswordHash) {
+	if user == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"success": false,
+			"message": "Username atau password salah (user tidak ditemukan)",
+		})
+	}
+
+	// 🔑 Verifikasi password
+	if !utils.CheckPassword(user.PasswordHash, req.Password) {
+		fmt.Println("❌ Password tidak cocok antara:", req.Password, "dan hash:", user.PasswordHash)
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"success": false,
 			"message": "Username atau password salah",
 		})
 	}
 
+	// 🪪 Generate JWT token
 	token, err := utils.GenerateToken(*user)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"success": false,
-			"message": "Gagal membuat token",
+			"message": "Gagal membuat token: " + err.Error(),
 		})
 	}
 
+	// ✅ Respons sukses
 	return c.JSON(model.LoginResponse{
 		User: model.User{
 			ID:        user.ID,

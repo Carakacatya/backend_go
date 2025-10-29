@@ -1,131 +1,172 @@
 package repository
 
 import (
-	"database/sql"
+	"context"
 	"errors"
+	"time"
+
 	"praktikum3/app/model"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type AlumniRepository interface {
 	GetAll() ([]model.Alumni, error)
-	GetByID(id int) (*model.Alumni, error)
+	GetByID(id primitive.ObjectID) (*model.Alumni, error)
 	Create(alumni *model.Alumni) error
-	Update(alumni *model.Alumni) error
-	SoftDelete(id int) error
+	Update(id primitive.ObjectID, alumni *model.Alumni) error
+	SoftDelete(id primitive.ObjectID) error
 	GetTrashed() ([]model.Alumni, error)
-	GetTrashedByID(id int) (*model.Alumni, error)
-	Restore(id int) error
-	ForceDelete(id int) error
+	GetTrashedByID(id primitive.ObjectID) (*model.Alumni, error)
+	Restore(id primitive.ObjectID) error
+	ForceDelete(id primitive.ObjectID) error
 }
 
 type alumniRepository struct {
-	db *sql.DB
+	col *mongo.Collection
 }
 
-func NewAlumniRepository(db *sql.DB) AlumniRepository {
-	return &alumniRepository{db: db}
+func NewAlumniRepository(db *mongo.Database) AlumniRepository {
+	return &alumniRepository{
+		col: db.Collection("alumni"),
+	}
 }
 
 func (r *alumniRepository) GetAll() ([]model.Alumni, error) {
-	rows, err := r.db.Query(`SELECT id, nim, nama, jurusan, angkatan, tahun_lulus, email, no_telepon, alamat, user_id, deleted_at FROM alumni WHERE deleted_at IS NULL`)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"deleted_at": bson.M{"$eq": nil}}
+	cur, err := r.col.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer cur.Close(ctx)
 
 	var alumniList []model.Alumni
-	for rows.Next() {
-		var a model.Alumni
-		err := rows.Scan(&a.ID, &a.NIM, &a.Nama, &a.Jurusan, &a.Angkatan, &a.TahunLulus, &a.Email, &a.NoTelepon, &a.Alamat, &a.UserID, &a.DeletedAt)
-		if err != nil {
-			return nil, err
-		}
-		alumniList = append(alumniList, a)
+	if err = cur.All(ctx, &alumniList); err != nil {
+		return nil, err
 	}
 	return alumniList, nil
 }
 
-func (r *alumniRepository) GetByID(id int) (*model.Alumni, error) {
-	row := r.db.QueryRow(`SELECT id, nim, nama, jurusan, angkatan, tahun_lulus, email, no_telepon, alamat, user_id, deleted_at FROM alumni WHERE id = ? AND deleted_at IS NULL`, id)
-	var a model.Alumni
-	err := row.Scan(&a.ID, &a.NIM, &a.Nama, &a.Jurusan, &a.Angkatan, &a.TahunLulus, &a.Email, &a.NoTelepon, &a.Alamat, &a.UserID, &a.DeletedAt)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
+func (r *alumniRepository) GetByID(id primitive.ObjectID) (*model.Alumni, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var alumni model.Alumni
+	err := r.col.FindOne(ctx, bson.M{"_id": id, "deleted_at": bson.M{"$eq": nil}}).Decode(&alumni)
+	if err == mongo.ErrNoDocuments {
+		return nil, nil
 	}
-	return &a, nil
+	return &alumni, err
 }
 
 func (r *alumniRepository) Create(alumni *model.Alumni) error {
-	_, err := r.db.Exec(`INSERT INTO alumni (nim, nama, jurusan, angkatan, tahun_lulus, email, no_telepon, alamat, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		alumni.NIM, alumni.Nama, alumni.Jurusan, alumni.Angkatan, alumni.TahunLulus, alumni.Email, alumni.NoTelepon, alumni.Alamat, alumni.UserID)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	alumni.CreatedAt = time.Now()
+	alumni.UpdatedAt = time.Now()
+	_, err := r.col.InsertOne(ctx, alumni)
 	return err
 }
 
-func (r *alumniRepository) Update(alumni *model.Alumni) error {
-	_, err := r.db.Exec(`UPDATE alumni SET nama = ?, jurusan = ?, angkatan = ?, tahun_lulus = ?, email = ?, no_telepon = ?, alamat = ? WHERE id = ?`,
-		alumni.Nama, alumni.Jurusan, alumni.Angkatan, alumni.TahunLulus, alumni.Email, alumni.NoTelepon, alumni.Alamat, alumni.ID)
+func (r *alumniRepository) Update(id primitive.ObjectID, alumni *model.Alumni) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	update := bson.M{
+		"$set": bson.M{
+			"nama":        alumni.Nama,
+			"jurusan":     alumni.Jurusan,
+			"angkatan":    alumni.Angkatan,
+			"tahun_lulus": alumni.TahunLulus,
+			"email":       alumni.Email,
+			"no_telepon":  alumni.NoTelepon,
+			"alamat":      alumni.Alamat,
+			"updated_at":  time.Now(),
+		},
+	}
+
+	_, err := r.col.UpdateOne(ctx, bson.M{"_id": id}, update)
 	return err
 }
 
-func (r *alumniRepository) SoftDelete(id int) error {
-	_, err := r.db.Exec(`UPDATE alumni SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, id)
+func (r *alumniRepository) SoftDelete(id primitive.ObjectID) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	update := bson.M{
+		"$set": bson.M{
+			"deleted_at": time.Now(),
+		},
+	}
+	_, err := r.col.UpdateOne(ctx, bson.M{"_id": id}, update)
 	return err
 }
 
 func (r *alumniRepository) GetTrashed() ([]model.Alumni, error) {
-	rows, err := r.db.Query(`SELECT id, nim, nama, jurusan, angkatan, tahun_lulus, email, no_telepon, alamat, user_id, deleted_at FROM alumni WHERE deleted_at IS NOT NULL`)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"deleted_at": bson.M{"$ne": nil}}
+	cur, err := r.col.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer cur.Close(ctx)
 
 	var alumniList []model.Alumni
-	for rows.Next() {
-		var a model.Alumni
-		err := rows.Scan(&a.ID, &a.NIM, &a.Nama, &a.Jurusan, &a.Angkatan, &a.TahunLulus, &a.Email, &a.NoTelepon, &a.Alamat, &a.UserID, &a.DeletedAt)
-		if err != nil {
-			return nil, err
-		}
-		alumniList = append(alumniList, a)
+	if err = cur.All(ctx, &alumniList); err != nil {
+		return nil, err
 	}
 	return alumniList, nil
 }
 
-func (r *alumniRepository) GetTrashedByID(id int) (*model.Alumni, error) {
-	row := r.db.QueryRow(`SELECT id, nim, nama, jurusan, angkatan, tahun_lulus, email, no_telepon, alamat, user_id, deleted_at FROM alumni WHERE id = ? AND deleted_at IS NOT NULL`, id)
-	var a model.Alumni
-	err := row.Scan(&a.ID, &a.NIM, &a.Nama, &a.Jurusan, &a.Angkatan, &a.TahunLulus, &a.Email, &a.NoTelepon, &a.Alamat, &a.UserID, &a.DeletedAt)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
+func (r *alumniRepository) GetTrashedByID(id primitive.ObjectID) (*model.Alumni, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var alumni model.Alumni
+	err := r.col.FindOne(ctx, bson.M{"_id": id, "deleted_at": bson.M{"$ne": nil}}).Decode(&alumni)
+	if err == mongo.ErrNoDocuments {
+		return nil, nil
 	}
-	return &a, nil
+	return &alumni, err
 }
 
-func (r *alumniRepository) Restore(id int) error {
-	res, err := r.db.Exec(`UPDATE alumni SET deleted_at = NULL WHERE id = ?`, id)
+func (r *alumniRepository) Restore(id primitive.ObjectID) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	update := bson.M{
+		"$set": bson.M{
+			"deleted_at": nil,
+			"updated_at": time.Now(),
+		},
+	}
+	res, err := r.col.UpdateOne(ctx, bson.M{"_id": id, "deleted_at": bson.M{"$ne": nil}}, update)
 	if err != nil {
 		return err
 	}
-	rowsAffected, _ := res.RowsAffected()
-	if rowsAffected == 0 {
+	if res.MatchedCount == 0 {
 		return errors.New("data tidak ditemukan di trash")
 	}
 	return nil
 }
 
-func (r *alumniRepository) ForceDelete(id int) error {
-	res, err := r.db.Exec(`DELETE FROM alumni WHERE id = ?`, id)
+func (r *alumniRepository) ForceDelete(id primitive.ObjectID) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	res, err := r.col.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		return err
 	}
-	rowsAffected, _ := res.RowsAffected()
-	if rowsAffected == 0 {
+	if res.DeletedCount == 0 {
 		return errors.New("data tidak ditemukan")
 	}
 	return nil

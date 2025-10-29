@@ -9,7 +9,7 @@ func HashPassword(password string) (string, error) {
 }
 
 // Untuk verifikasi password input user dengan hash di database
-func CheckPassword(password, hash string) bool {
+func CheckPassword(hash, password string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
 }
