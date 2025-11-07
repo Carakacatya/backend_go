@@ -19,7 +19,7 @@ func AuthRequired() fiber.Handler {
 		}
 
 		// Ambil token tanpa kata "Bearer "
-		token := ""
+		var token string
 		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
 			token = authHeader[7:]
 		} else {
@@ -38,23 +38,20 @@ func AuthRequired() fiber.Handler {
 			})
 		}
 
-		// Konversi string UserID dari JWT ke ObjectID (jika valid)
-		userID := claims.UserID
-		if _, err := primitive.ObjectIDFromHex(userID); err != nil {
+		// Validasi ObjectID
+		if _, err := primitive.ObjectIDFromHex(claims.UserID); err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"success": false,
 				"message": "ID user tidak valid",
 			})
 		}
 
-		// Simpan user ke context sebagai map[string]interface{}
+		// Simpan data user ke context
 		c.Locals("user", map[string]interface{}{
-			"id":       userID,
+			"id":       claims.UserID,
 			"username": claims.Username,
 			"role":     claims.Role,
 		})
-		c.Locals("user_id", userID)
-		c.Locals("username", claims.Username)
 		c.Locals("role", claims.Role)
 
 		return c.Next()
@@ -64,8 +61,8 @@ func AuthRequired() fiber.Handler {
 // AdminOnly middleware untuk admin saja
 func AdminOnly() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		role, ok := c.Locals("role").(string)
-		if !ok || role != "admin" {
+		role, _ := c.Locals("role").(string)
+		if role != "admin" {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"success": false,
 				"message": "Hanya admin yang boleh mengakses endpoint ini",
@@ -78,8 +75,8 @@ func AdminOnly() fiber.Handler {
 // UserOnly middleware untuk user biasa saja
 func UserOnly() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		role, ok := c.Locals("role").(string)
-		if !ok || role != "user" {
+		role, _ := c.Locals("role").(string)
+		if role != "user" {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"success": false,
 				"message": "Hanya user yang boleh mengakses endpoint ini",
