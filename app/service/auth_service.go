@@ -23,7 +23,18 @@ func NewAuthService(db *mongo.Database) *AuthService {
 	}
 }
 
-// ✅ Login Handler
+// Login godoc
+// @Summary Login user
+// @Description Login dan mendapatkan JWT token dari sistem
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param login body model.LoginRequest true "Login credentials"
+// @Success 200 {object} model.LoginResponse
+// @Failure 400 {object} map[string]interface{} "Body tidak valid"
+// @Failure 401 {object} map[string]interface{} "Username atau password salah"
+// @Failure 500 {object} map[string]interface{} "Kesalahan server atau database"
+// @Router /login [post]
 func (s *AuthService) Login(c *fiber.Ctx) error {
 	var req model.LoginRequest
 	if err := c.BodyParser(&req); err != nil {
