@@ -1,10 +1,10 @@
 package service
 
 import (
+	"time"
+
 	"praktikum3/app/model"
 	"praktikum3/app/repository"
-	"strconv"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -19,12 +19,20 @@ func NewPekerjaanService(repo repository.PekerjaanRepository) *PekerjaanService 
 }
 
 // ================== GET ALL ==================
+// GetAll godoc
+// @Summary Get semua pekerjaan
+// @Description Mengambil semua data pekerjaan alumni tanpa parameter
+// @Tags Pekerjaan
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /pekerjaan/ [get]
 func (s *PekerjaanService) GetAll(c *fiber.Ctx) error {
 	search := c.Query("search", "")
 	sortBy := c.Query("sortBy", "created_at")
 	order := c.Query("order", "DESC")
-	limit, _ := strconv.Atoi(c.Query("limit", "10"))
-	page, _ := strconv.Atoi(c.Query("page", "1"))
+	limit := c.QueryInt("limit", 10)
+	page := c.QueryInt("page", 1)
 	offset := (page - 1) * limit
 
 	data, err := s.repo.GetAllWithQuery(search, sortBy, order, limit, offset)
@@ -49,6 +57,15 @@ func (s *PekerjaanService) GetAll(c *fiber.Ctx) error {
 }
 
 // ================== GET BY ID ==================
+// @Summary Get pekerjaan by ID
+// @Description Mendapatkan detail pekerjaan berdasarkan ID
+// @Tags Pekerjaan
+// @Security BearerAuth
+// @Param id path string true "ID Pekerjaan"
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 400,404,500 {object} map[string]interface{}
+// @Router /pekerjaan/{id} [get]
 func (s *PekerjaanService) GetByID(c *fiber.Ctx) error {
 	idStr := c.Params("id")
 	objectID, err := primitive.ObjectIDFromHex(idStr)
@@ -68,6 +85,15 @@ func (s *PekerjaanService) GetByID(c *fiber.Ctx) error {
 }
 
 // ================== GET BY ALUMNI ID ==================
+// @Summary Get pekerjaan berdasarkan alumni ID
+// @Description Mendapatkan semua pekerjaan milik alumni tertentu
+// @Tags Pekerjaan
+// @Security BearerAuth
+// @Param alumni_id path string true "ID Alumni"
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 400,500 {object} map[string]interface{}
+// @Router /pekerjaan/alumni/{alumni_id} [get]
 func (s *PekerjaanService) GetByAlumniID(c *fiber.Ctx) error {
 	alumniIDParam := c.Params("alumni_id")
 	alumniID, err := primitive.ObjectIDFromHex(alumniIDParam)
@@ -75,17 +101,14 @@ func (s *PekerjaanService) GetByAlumniID(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"success": false, "message": "alumni_id tidak valid"})
 	}
 
-	// Ambil data user dari middleware
 	userData := c.Locals("user")
-	user, ok := userData.(*model.User)
+	claimsMap, ok := userData.(map[string]interface{})
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"success": false, "message": "Invalid token data"})
 	}
-	role := user.Role
-	includeDeleted := false
-	if role == "admin" {
-		includeDeleted = true
-	}
+
+	role, _ := claimsMap["role"].(string)
+	includeDeleted := role == "admin"
 
 	data, err := s.repo.GetByAlumniID(alumniID, includeDeleted)
 	if err != nil {
@@ -96,6 +119,17 @@ func (s *PekerjaanService) GetByAlumniID(c *fiber.Ctx) error {
 }
 
 // ================== CREATE ==================
+// Create godoc
+// @Summary Tambah pekerjaan alumni
+// @Description Tambahkan data pekerjaan untuk alumni tertentu (wajib kirim alumni_id)
+// @Tags Pekerjaan
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body model.CreatePekerjaanReq true "Data pekerjaan untuk alumni tertentu"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400,500 {object} map[string]interface{}
+// @Router /pekerjaan/ [post]
 func (s *PekerjaanService) Create(c *fiber.Ctx) error {
 	var in model.CreatePekerjaanReq
 	if err := c.BodyParser(&in); err != nil {
@@ -125,6 +159,17 @@ func (s *PekerjaanService) Create(c *fiber.Ctx) error {
 }
 
 // ================== UPDATE ==================
+// @Summary Update pekerjaan
+// @Description Mengupdate data pekerjaan berdasarkan ID
+// @Tags Pekerjaan
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path string true "ID Pekerjaan"
+// @Param pekerjaan body model.UpdatePekerjaanReq true "Data pekerjaan"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400,404,500 {object} map[string]interface{}
+// @Router /pekerjaan/{id} [put]
 func (s *PekerjaanService) Update(c *fiber.Ctx) error {
 	idStr := c.Params("id")
 	objectID, err := primitive.ObjectIDFromHex(idStr)
@@ -155,10 +200,18 @@ func (s *PekerjaanService) Update(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
 	}
 
-	return c.JSON(fiber.Map{"success": true, "message": "Pekerjaan berhasil diupdate"})
+	return c.JSON(fiber.Map{"success": true, "message": "Pekerjaan berhasil diperbarui"})
 }
 
 // ================== SOFT DELETE ==================
+// @Summary Soft delete pekerjaan
+// @Description Menghapus pekerjaan tanpa menghapus permanen
+// @Tags Pekerjaan
+// @Security BearerAuth
+// @Param id path string true "ID Pekerjaan"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400,500 {object} map[string]interface{}
+// @Router /pekerjaan/{id} [delete]
 func (s *PekerjaanService) SoftDelete(c *fiber.Ctx) error {
 	userData := c.Locals("user")
 	claimsMap, ok := userData.(map[string]interface{})
@@ -193,6 +246,14 @@ func (s *PekerjaanService) SoftDelete(c *fiber.Ctx) error {
 }
 
 // ================== RESTORE ==================
+// @Summary Restore pekerjaan
+// @Description Mengembalikan pekerjaan yang dihapus (soft delete)
+// @Tags Pekerjaan
+// @Security BearerAuth
+// @Param id path string true "ID Pekerjaan"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400,500 {object} map[string]interface{}
+// @Router /pekerjaan/restore/{id} [put]
 func (s *PekerjaanService) Restore(c *fiber.Ctx) error {
 	idStr := c.Params("id")
 	objectID, err := primitive.ObjectIDFromHex(idStr)
@@ -208,6 +269,14 @@ func (s *PekerjaanService) Restore(c *fiber.Ctx) error {
 }
 
 // ================== HARD DELETE ==================
+// @Summary Hard delete pekerjaan
+// @Description Menghapus data pekerjaan secara permanen
+// @Tags Pekerjaan
+// @Security BearerAuth
+// @Param id path string true "ID Pekerjaan"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400,500 {object} map[string]interface{}
+// @Router /pekerjaan/hard/{id} [delete]
 func (s *PekerjaanService) HardDelete(c *fiber.Ctx) error {
 	idStr := c.Params("id")
 	objectID, err := primitive.ObjectIDFromHex(idStr)
@@ -223,6 +292,13 @@ func (s *PekerjaanService) HardDelete(c *fiber.Ctx) error {
 }
 
 // ================== GET TRASH ==================
+// @Summary Get pekerjaan yang dihapus (trash)
+// @Description Mengambil semua pekerjaan yang dihapus (soft delete)
+// @Tags Pekerjaan
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /pekerjaan/trash [get]
 func (s *PekerjaanService) GetTrashed(c *fiber.Ctx) error {
 	data, err := s.repo.GetAllTrash()
 	if err != nil {
