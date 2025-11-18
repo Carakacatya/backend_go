@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"praktikum3/app/model"
 	"praktikum3/app/repository"
 	"praktikum3/app/utils"
@@ -13,17 +12,39 @@ import (
 
 type AuthService struct {
 	userRepo repository.IUserRepository
+	password utils.PasswordChecker
+	tokenGen utils.TokenGenerator
 }
 
-// ✅ Constructor
+// ===============================
+// Constructor untuk runtime aplikasi
+// ===============================
 func NewAuthService(db *mongo.Database) *AuthService {
 	repo := repository.NewUserRepository(db)
+
 	return &AuthService{
 		userRepo: repo,
+		password: utils.RealPasswordChecker{},
+		tokenGen: utils.RealTokenGenerator{},
 	}
 }
 
-// Login godoc
+// ===============================
+// Constructor untuk Unit Test
+// ===============================
+func NewAuthServiceMock(
+	repo repository.IUserRepository,
+	pw utils.PasswordChecker,
+	tg utils.TokenGenerator,
+) *AuthService {
+	return &AuthService{
+		userRepo: repo,
+		password: pw,
+		tokenGen: tg,
+	}
+}
+
+// ========================================
 // @Summary Login user
 // @Description Login dan mendapatkan JWT token dari sistem
 // @Tags Auth
@@ -35,6 +56,7 @@ func NewAuthService(db *mongo.Database) *AuthService {
 // @Failure 401 {object} map[string]interface{} "Username atau password salah"
 // @Failure 500 {object} map[string]interface{} "Kesalahan server atau database"
 // @Router /login [post]
+// ========================================
 func (s *AuthService) Login(c *fiber.Ctx) error {
 	var req model.LoginRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -44,9 +66,8 @@ func (s *AuthService) Login(c *fiber.Ctx) error {
 		})
 	}
 
-	// 🔍 Cari user berdasarkan username/email dari MongoDB
+	// ambil user dari database
 	user, err := s.userRepo.FindByUsernameOrEmail(context.Background(), req.Username)
-	fmt.Println("DEBUG user =", user)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"success": false,
@@ -57,29 +78,28 @@ func (s *AuthService) Login(c *fiber.Ctx) error {
 	if user == nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"success": false,
-			"message": "Username atau password salah (user tidak ditemukan)",
+			"message": "Username atau password salah",
 		})
 	}
 
-	// 🔑 Verifikasi password
-	if !utils.CheckPassword(user.PasswordHash, req.Password) {
-		fmt.Println("❌ Password tidak cocok antara:", req.Password, "dan hash:", user.PasswordHash)
+	// verify password menggunakan dependency injection
+	if !s.password.Check(user.PasswordHash, req.Password) {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"success": false,
 			"message": "Username atau password salah",
 		})
 	}
 
-	// 🪪 Generate JWT token
-	token, err := utils.GenerateToken(*user)
+	// generate JWT token menggunakan dependency injection
+	token, err := s.tokenGen.Generate(*user)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"success": false,
-			"message": "Gagal membuat token: " + err.Error(),
+			"message": "Gagal membuat token",
 		})
 	}
 
-	// ✅ Respons sukses
+	// response sukses
 	return c.JSON(model.LoginResponse{
 		User: model.User{
 			ID:        user.ID,

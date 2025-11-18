@@ -171,12 +171,20 @@ func (s *AlumniService) SoftDelete(c *fiber.Ctx) error {
 // @Success 200 {object} map[string]interface{}
 // @Router /alumni/trash [get]
 func (s *AlumniService) GetTrashed(c *fiber.Ctx) error {
-	data, err := s.alumniRepo.GetTrashed()
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"success": false, "message": err.Error()})
-	}
-	return c.JSON(fiber.Map{"success": true, "data": data})
+    data, err := s.alumniRepo.GetTrashed()
+    if err != nil {
+        return c.Status(500).JSON(fiber.Map{
+            "success": false,
+            "message": "failed to fetch trashed alumni",
+        })
+    }
+
+    return c.Status(200).JSON(fiber.Map{
+        "success": true,
+        "data":    data,
+    })
 }
+
 
 // Restore godoc
 // @Summary Restore alumni dari trash
